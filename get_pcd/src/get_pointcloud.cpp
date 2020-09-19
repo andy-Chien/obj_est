@@ -90,8 +90,13 @@ bool get_pcd_callback (get_pcd::save_pcd::Request &req, get_pcd::save_pcd::Respo
     }
   }
   pcl::PointCloud<PointTRGB>::Ptr cloud_base(new pcl::PointCloud<PointTRGB>);
+  pcl::PointCloud<PointTRGB>::Ptr cloud_filtered(new pcl::PointCloud<PointTRGB>);
+  pcl::VoxelGrid<PointTRGB> sor;
+  sor.setInputCloud (cloud);
+  sor.setLeafSize (0.0015f, 0.0015f, 0.0015f);
+  sor.filter (*cloud_filtered);
   Eigen::Matrix4f matrix = curr_trans * d2c_trans;
-  pcl::transformPointCloud(*cloud, *cloud_base, matrix);
+  pcl::transformPointCloud(*cloud_filtered, *cloud_base, matrix);
 
   if(cloud_mix->empty())
   {
@@ -113,8 +118,12 @@ bool get_pcd_callback (get_pcd::save_pcd::Request &req, get_pcd::save_pcd::Respo
   // save_file_thread->join();
   if(save_mix)
   {
+    pcl::PointCloud<PointTRGB>::Ptr mix_save(new pcl::PointCloud<PointTRGB>);
+    sor.setInputCloud (cloud_mix);
+    sor.setLeafSize (0.0015f, 0.0015f, 0.0015f);
+    sor.filter (*mix_save);
     string file_path_mix = string(save_path_cloud + "cloud_mix_" + std::to_string(mix_cnt) + ".pcd");
-    pcl::io::savePCDFileASCII<PointTRGB>(file_path_mix, *cloud_mix);
+    pcl::io::savePCDFileASCII<PointTRGB>(file_path_mix, *mix_save);
     cout << "Cloud saved: " << file_path_mix << "; (width, height) = " << cloud_mix->width << ", " << cloud_mix->height << endl;
     mix_cnt++;
     save_mix = false;

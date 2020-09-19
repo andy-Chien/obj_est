@@ -12,7 +12,7 @@
   <arg name="align_depth"               default="false"/>
   <arg name="publish_tf"                default="true"/>
   <arg name="tf_publish_rate"           default="0"/>
-  <arg name="filters"                   default="pointcloud"/>
+  <arg name="filters"                   default="pointcloud,temporal,hole_filling"/>
 
   <include file="$(find realsense2_camera)/launch/rs_rgbd.launch">
     <arg name="depth_width"               value="$(arg depth_width      )"/>
