@@ -38,10 +38,10 @@ Eigen::MatrixXf curr_trans = Eigen::MatrixXf::Identity(4,4);
 Eigen::MatrixXf d2c_trans = Eigen::MatrixXf::Identity(4,4);
 
 pcl::PointCloud<PointTRGB>::Ptr cloud_mix(new pcl::PointCloud<PointTRGB>);
+pcl::PointCloud<PointTRGB>::Ptr cloud(new pcl::PointCloud<PointTRGB>);
 
-int cnt = PCDSONCE * 10;
+int cnt = 0;
 int mix_cnt = 0;
-
 void set_d2color_trans(const realsense2_camera::Extrinsics &trans)
 {
   for(int i=0; i<3; i++)
@@ -64,51 +64,12 @@ void save_pcd(pcl::PointCloud<PointTRGB>::Ptr pcd, string* path)
 
 void add_two_pcd(pcl::PointCloud<PointTRGB>::Ptr a, pcl::PointCloud<PointTRGB>::Ptr b)
 {
-  mutex.lock();
   *a = *a + *b;
-  mutex.unlock();
 }
 
 void cloud_cb (const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
 {
-  if(cnt <= PCDSONCE * 3 && cnt%3 == 0)  //save one pcd every three times
-  {
-    pcl::PointCloud<PointTRGB>::Ptr cloud(new pcl::PointCloud<PointTRGB>);
-    pcl::PointCloud<PointTRGB>::Ptr cloud_base(new pcl::PointCloud<PointTRGB>);
-    pcl::fromROSMsg(*cloud_msg, *cloud);
-    Eigen::Matrix4f matrix = curr_trans * d2c_trans;
-    pcl::transformPointCloud(*cloud, *cloud_base, matrix);
-
-    if(cloud_mix->empty())
-    {
-      *cloud_mix =  *cloud_base;
-    }
-    else
-    {
-      pcd_sum_thread = new boost::thread(boost::bind(&add_two_pcd, cloud_mix, cloud_base));
-      // delete pcd_sum_thread;
-    }
-    file_path = new string(save_path_cloud + file_name + std::to_string(cnt) + ".pcd");
-    // ========go thread========
-    save_file_thread = new boost::thread(boost::bind(&save_pcd, cloud_base, file_path));
-    delete save_file_thread;
-    // =======no thread=======
-    // pcl::io::savePCDFileASCII<PointTRGB>(*file_path, *cloud);
-    // cout << "Cloud saved: " << *file_path << "; (width, height) = " << cloud->width << ", " << cloud->height << endl;
-  }
-  else if(save_mix)
-  {
-    ros::Rate rate(10);
-    while(!pcd_sum_thread->try_join_for(boost::chrono::microseconds(10)))
-      rate.sleep();
-
-    string file_path_mix = string(save_path_cloud + "cloud_mix_" + std::to_string(mix_cnt) + ".pcd");
-    pcl::io::savePCDFileASCII<PointTRGB>(file_path_mix, *cloud_mix);
-    cout << "Cloud saved: " << file_path_mix << "; (width, height) = " << cloud_mix->width << ", " << cloud_mix->height << endl;
-    mix_cnt++;
-    save_mix = false;
-  }
-  cnt++;
+  pcl::fromROSMsg(*cloud_msg, *cloud);
   return;
 }
 
@@ -116,7 +77,6 @@ bool get_pcd_callback (get_pcd::save_pcd::Request &req, get_pcd::save_pcd::Respo
 {
   file_name = req.name;
   save_mix = req.save_mix;
-  cnt = 0;
   
   if(!req.curr_trans.empty())
   {
@@ -129,6 +89,37 @@ bool get_pcd_callback (get_pcd::save_pcd::Request &req, get_pcd::save_pcd::Respo
       curr_trans(i, 3) = req.curr_trans[i];
     }
   }
+  pcl::PointCloud<PointTRGB>::Ptr cloud_base(new pcl::PointCloud<PointTRGB>);
+  Eigen::Matrix4f matrix = curr_trans * d2c_trans;
+  pcl::transformPointCloud(*cloud, *cloud_base, matrix);
+
+  if(cloud_mix->empty())
+  {
+    *cloud_mix =  *cloud_base;
+  }
+  else
+  {
+    // pcd_sum_thread = new boost::thread(boost::bind(&add_two_pcd, cloud_mix, cloud_base));
+    add_two_pcd(cloud_mix, cloud_base);
+    // *cloud_mix =  *cloud_mix + *cloud_base;
+  }
+  file_path = new string(save_path_cloud + file_name + std::to_string(cnt) + ".pcd");
+  // ========go thread========
+  // save_file_thread = new boost::thread(boost::bind(&save_pcd, cloud_base, file_path));
+  // =======no thread=======
+  pcl::io::savePCDFileASCII<PointTRGB>(*file_path, *cloud_base);
+  cout << "Cloud saved: " << *file_path << "; (width, height) = " << cloud_base->width << ", " << cloud_base->height << endl;
+  // pcd_sum_thread->join();
+  // save_file_thread->join();
+  if(save_mix)
+  {
+    string file_path_mix = string(save_path_cloud + "cloud_mix_" + std::to_string(mix_cnt) + ".pcd");
+    pcl::io::savePCDFileASCII<PointTRGB>(file_path_mix, *cloud_mix);
+    cout << "Cloud saved: " << file_path_mix << "; (width, height) = " << cloud_mix->width << ", " << cloud_mix->height << endl;
+    mix_cnt++;
+    save_mix = false;
+  }
+  cnt++;
   res.done = true;
   return true;
 }
@@ -144,7 +135,3 @@ int main (int argc, char** argv)
   ros::ServiceServer get_pc_service = n.advertiseService("/get_pcd", &get_pcd_callback);
   ros::spin ();
 }
-
-// *a =*a +*b;
-// Eigen::Matrix4f matrix =Eigen::Matrix4f::Identity();
-// pcl::transformPointCloud(*a, *a_trans, matrix);
